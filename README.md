@@ -1,2 +1,2 @@
-#Projekt IOS - skript v shelli
+# Projekt IOS - skript v shelli
 
