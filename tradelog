@@ -1,5 +1,4 @@
 #!/bin/sh
-#TODO pripadne zmenit
 
 export POSIXLY_CORRECT=yes
 export LC_ALL=C
@@ -22,24 +21,99 @@ if [ "$1" = "list-tick" ]
     then awk -F ';' '{print $2}' "$file"  | sort | uniq
 
 #profit function - calculates whole profit based on sell/buy column (3rd) and
-#   value (4th column) * volume (6th column)
+#value (4th column) * volume (6th column)
 elif [ "$1" = "profit" ] 
-    then awk -F ';' '{tmp=$4*$6;
-                      if ($3 == "sell") value+=tmp
-                      else if ($3 == "buy") value-=tmp}
-                      END{printf "%.2f\n", value}' "$file"
+    then awk -F ';' '{
+        tmp=$4*$6;
+        if ($3 == "sell") value+=tmp
+        else if ($3 == "buy") value-=tmp
+        }
+        END{printf("%.2f\n", value)
+        }' "$file"
+
 #pos function
 #prev = name of previous ticket
 #value = sum of buy/sell values
-#weight = last price for a ticket
+#price = last price for a ticket
 elif [ "$1" = "pos" ]
     then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
-    awk -F ';' '{if (prev != $2) 
-    {if (value != 0) printf "%-9s : %11.2f\n", prev, value*weight; value=(($3 == "sell") ? value=-$6 : value=$6); prev = $2}
-    else { ($3 == "sell") ? value-=$6 : value+=$6; weight=$4}} 
-    END{printf "%-9s : %11.2f\n", prev, value*weight}' | sort -t\: -k2nr
+    awk -F ';' '{
+        if (prev != $2){
+            if (value != 0){ 
+                printf "%-9s : %11.2f\n", prev, value*price; 
+            }
+                value=(($3 == "sell") ? value=-$6 : value=$6); 
+                prev = $2;
+            } else { 
+                ($3 == "sell") ? value-=$6 : value+=$6; 
+                price=$4};
+            } 
+            END{printf("%-9s : %11.2f\n", prev, value*price)}' | 
+    sort -t: -k2nr
 
+#last-price function 
+#prev = name of previous ticket
+#price = price of the last item
 elif [ "$1" = "last-price" ]
     then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+    awk -F ';' '{
+        if (NR == 1){
+            prev = $2;
+        } 
+        if (prev != $2){
+            printf("%-9s : %6.2f\n", prev, price; prev = $2);
+        } else price=$4
+        } 
+        END{printf "%-9s : %6.2f\n", prev, price}' 
+
+#hist-ord function
+#prev = name of previous ticket
+elif [ "$1" = "hist-ord" ]
+    then sort -s -t\; -k2,2 -k1,1 "$file" | 
+    awk -F ';' '{
+        if (NR == 1){
+            prev = $2; 
+            printf("%-9s : ", prev);
+        } else {
+            if (prev != $2){
+                prev = $2; 
+                printf("#\n%-9s : ", prev);
+            } else printf("#");
+        } 
+        }
+        END{printf("#\n")}' 
+
+#prev = name of previous ticket
+#value = sum of buy/sell values
+#price = last price for a ticket
+elif [ "$1" = "graph-pos" ]
+    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+    awk -F ';' '{
+        if (prev != $2) {
+            if (value != 0){ 
+                printf("%s %.2f\n", prev, value*price); 
+            }
+            value=(($3 == "sell") ? value=-$6 : value=$6); prev = $2
+        }
+        else { 
+            ($3 == "sell") ? value-=$6 : value+=$6; price=$4
+        }
+        } 
+        END{
+        printf("%s %.2f\n", prev, value*price)
+    }' | 
+    #sorting absolute value of prices
+    sed -r 's/-([0-9]+.[0-9]+)/\1-/g;' | #place minus sign after the number -5 -> 5-
+    sort -k2nr |                         
+    sed -r 's/([0-9]+.[0-9]+)-/-\1/g;' | #place minus sign infront of the number
+    
+    #no width option
+    awk '{
+        printf("%-9s : ", $1); 
+        if ($2 > 0){
+            while ($2-- > 0) 
+                printf "#" 
+            }
+    }'
 fi
 
