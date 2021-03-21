@@ -1,0 +1,45 @@
+#!/bin/sh
+#TODO pripadne zmenit
+
+export POSIXLY_CORRECT=yes
+export LC_ALL=C
+export LC_NUMERIC=en_US.UTF-8
+
+#TODO check for arguments
+#if [ $# -eq 0 ]
+#    then echo "just print"
+#fi
+
+#TODO generic file 
+file=$2
+
+#TODO generic function call
+# $1 is the first argument
+# $file is the name of file the open 
+
+#list-tick function - sorts out file by second column
+if [ "$1" = "list-tick" ]
+    then awk -F ';' '{print $2}' "$file"  | sort | uniq
+
+#profit function - calculates whole profit based on sell/buy column (3rd) and
+#   value (4th column) * volume (6th column)
+elif [ "$1" = "profit" ] 
+    then awk -F ';' '{tmp=$4*$6;
+                      if ($3 == "sell") value+=tmp
+                      else if ($3 == "buy") value-=tmp}
+                      END{printf "%.2f\n", value}' "$file"
+#pos function
+#prev = name of previous ticket
+#value = sum of buy/sell values
+#weight = last price for a ticket
+elif [ "$1" = "pos" ]
+    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+    awk -F ';' '{if (prev != $2) 
+    {if (value != 0) printf "%-9s : %11.2f\n", prev, value*weight; value=(($3 == "sell") ? value=-$6 : value=$6); prev = $2}
+    else { ($3 == "sell") ? value-=$6 : value+=$6; weight=$4}} 
+    END{printf "%-9s : %11.2f\n", prev, value*weight}' | sort -t\: -k2nr
+
+elif [ "$1" = "last-price" ]
+    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+fi
+
