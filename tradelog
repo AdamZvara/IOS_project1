@@ -195,18 +195,46 @@ elif [ "$COMMAND" = "last-price" ]; then
 #prev = name of previous ticket
 elif [ "$COMMAND" = "hist-ord" ]; then 
     echo "$INPUT" | sort -s -t\; -k2,2 -k1,1 | 
-    awk -F ';' '{
-        if (NR == 1){
-            prev = $2 
-            printf("%-9s : ", prev)
-        } else {
-            if (prev != $2){
-                prev = $2
-                printf("#\n%-9s : ", prev)
-            } else printf("#")
-        } 
-        }
-        END{printf("#\n")}' 
+    if [ "$WIDTH" = "" ]; then
+        awk -F ';' '{
+            if (NR == 1){
+                prev = $2 
+                printf("%-9s : ", prev)
+            } else {
+                if (prev != $2){
+                    prev = $2
+                    printf("#\n%-9s : ", prev)
+                } else printf("#")
+            } 
+            }
+            END{printf("#\n")}'
+    else
+        awk -F ';' '{
+            if (NR == 1){
+                prev = $2 
+                printf("%s ", prev)
+            } else {
+                if (prev != $2){
+                    count++
+                    prev = $2
+                    printf("%d\n%s ", count, prev)
+                    count = 0
+                } else count++
+            } 
+            } END{printf("%d\n", ++count)}' | sort -k2nr |
+        awk -v width="$WIDTH" '{
+            if (NR == 1){
+                max = $2
+            }
+            count = int(($2*int(width))/max)
+            printf("%-9s : ", $1)
+            while (count > 0){
+                printf("#")
+                count--
+            }
+            printf("\n")
+        }' | sort
+    fi
 
 #prev = name of previous ticket
 #value = sum of buy/sell values
