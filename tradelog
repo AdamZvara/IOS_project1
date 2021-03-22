@@ -102,10 +102,12 @@ fi
 
 #echo "$INPUT" | sort -s -t\; -k2,2 -k1,1
 
+#default action, when no command is called
+if [ "$COMMAND" = 'none' ]; then
+    echo "$INPUT"
 
-#TODO rewrite functions so they take input
 #list-tick function - sorts out file by second column
-if [ "$COMMAND" = "list-tick" ]; then 
+elif [ "$COMMAND" = "list-tick" ]; then 
     echo "$INPUT" | awk -F ';' '{print $2}' | sort | uniq
 
 #profit function - calculates whole profit based on sell/buy column (3rd) and
@@ -130,7 +132,7 @@ elif [ "$COMMAND" = "pos" ]; then
     awk -F ';' '{
         if (prev != $2){
             if (value != 0){ 
-                printf "%-9s : %11.2f\n", prev, value*price 
+                printf("%s %.2f\n", prev, value*price) 
             }
                 value=(($3 == "sell") ? value=-$6 : value=$6) 
                 prev = $2
@@ -138,8 +140,19 @@ elif [ "$COMMAND" = "pos" ]; then
                 ($3 == "sell") ? value-=$6 : value+=$6 
                 price=$4}
             } 
-            END{printf("%-9s : %11.2f\n", prev, value*price)}' | 
-    sort -t: -k2nr
+            END{printf("%s %.2f\n", prev, value*price)}' | 
+    
+    #sorting absolute value of prices
+    sed -r 's/-([0-9]+.[0-9]+)/\1-/g;' | #place minus sign after the number -5 -> 5-
+    sort -k2nr |                
+    sed -r 's/([0-9]+.[0-9]+)-/-\1/g;' | #place minus sign infront of the number
+    sort -k2nr |
+    awk '{
+        if (NR == 1){
+            max=length($2)
+        } 
+        printf("%-9s : %*.2f\n", $1, max, $2)}' 
+    
 
 #last-price function 
 #prev = name of previous ticket
@@ -201,7 +214,7 @@ elif [ "$COMMAND" = "graph-pos" ]; then
     #no width option
     awk '{
         printf("%-9s : ", $1)
-        count = int($2/100000)
+        count = int($2/1000)
         if ($2 > 0){
             while (count > 0){ 
                 count--
