@@ -45,7 +45,9 @@ do
             DATE_BEFORE="$DATE_BEFORE $OPTARG"
             shift; shift;;
         t)
-            TICKER_FILTER="$TICKER_FILTER $OPTARG"
+            TICKER_FILTER="^$OPTARG$|$TICKER_FILTER"
+            TICKER_FILTER=$(echo "$TICKER_FILTER" | sed 's/.$//')
+            TICKER_FILTER="$TICKER_FILTER$"
             shift; shift;;
         w)
             if [ "$WIDTH" != "" ]; then
@@ -80,7 +82,7 @@ esac
 #echo "$COMMAND"
 
 while [ "$1" != "" ]; do
-    val=`expr match "$1" '.*\.gz$'`
+    val=$(expr match "$1" '.*\.gz$')
     if [ "$val" != 0 ]; then
         GZ_FILES="$1 $GZ_FILES"
     else
@@ -92,6 +94,7 @@ done
 #echo "$GZ_FILES"
 #echo "$LOG_FILES"
 
+#TODO shellcheck wants parantheses, doesnt work with them
 if [ "$GZ_FILES" != "" ]; then
     INPUT=$(gzip -d -c $GZ_FILES | cat $LOG_FILES -)
 elif [ "$LOG_FILES" != "" ]; then
@@ -100,7 +103,9 @@ else
     INPUT=$(cat)
 fi
 
-#echo "$INPUT" | sort -s -t\; -k2,2 -k1,1
+if [ "$TICKER_FILTER" != "" ]; then 
+    INPUT=$(echo "$INPUT" | awk -F ';' -v filters="$TICKER_FILTER" '$2 ~ (filters) {print $0}')
+fi
 
 #default action, when no command is called
 if [ "$COMMAND" = 'none' ]; then
