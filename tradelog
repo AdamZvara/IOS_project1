@@ -33,41 +33,50 @@ DATE_BEFORE=""
 TICKER_FILTER=""
 WIDTH=""
 
+#manually check for --help option - or use getopt next time!
+for arg in "$@"; do
+    if [ "$arg" = '--help' ]; then
+        usage
+        exit 0
+    fi
+done
+
+#TODO remake AFTER/BEFORE if selected multiple times
 #parsing options
-#TODO --help
-while getopts ':a:b:t:w:h' o
+while getopts ':a:b:t:w:h' option
 do
-    case "$o" in
+    case "$option" in
         a)
-            DATE_AFTER="$DATE_AFTER $OPTARG"
+            DATE_AFTER="$OPTARG"
             shift; shift;;
         b)
-            DATE_BEFORE="$DATE_BEFORE $OPTARG"
+            DATE_BEFORE="$OPTARG"
             shift; shift;;
         t)
+            #some magic to have TICKER_FILTER ready to use as regex
+            #TICKER_FILTER is in format ^TICKER1$|^TICKER2$|^TICKER3$ ...
             TICKER_FILTER="^$OPTARG$|$TICKER_FILTER"
             TICKER_FILTER=$(echo "$TICKER_FILTER" | sed 's/.$//')
             TICKER_FILTER="$TICKER_FILTER$"
             shift; shift;;
         w)
             if [ "$WIDTH" != "" ]; then
-                echo "Width sa nastavuje iba raz!"
+                echo "Width sa mozete nastavit len raz!"
                 exit 1
             else
-                WIDTH="$OPTARG"
-                shift; shift
+                if [ "$OPTARG" -le 0 ]; then
+                    echo "Width musi byt cele kladne cislo!"
+                    exit 1
+                else
+                    WIDTH="$OPTARG"
+                    shift; shift
+                fi
             fi;;
         h) usage; exit 0;;
-        *) echo "Neplatny prepinac"; exit 1;;
+        *) echo "Neplatny prepinac!"; exit 1;;
     esac
 done
 
-#echo $DATE_AFTER
-#echo $DATE_BEFORE
-#echo $TICKER_FILTER
-#echo $WIDTH
-
-#TODO make sure that only one command is accepted
 #parsing command
 case "$1" in
     list-tick) COMMAND="list-tick";shift;;
@@ -79,8 +88,7 @@ case "$1" in
     *) COMMAND="none";;
 esac
 
-#echo "$COMMAND"
-
+#get input files from command line
 while [ "$1" != "" ]; do
     val=$(expr match "$1" '.*\.gz$')
     if [ "$val" != 0 ]; then
@@ -91,10 +99,7 @@ while [ "$1" != "" ]; do
     shift
 done
 
-#echo "$GZ_FILES"
-#echo "$LOG_FILES"
-
-#TODO shellcheck wants parantheses, doesnt work with them
+#set contents of files to variable input
 if [ "$GZ_FILES" != "" ]; then
     INPUT=$(gzip -d -c $GZ_FILES | cat $LOG_FILES -)
 elif [ "$LOG_FILES" != "" ]; then
@@ -103,8 +108,17 @@ else
     INPUT=$(cat)
 fi
 
+#apply options [after, before, ticker] from getopts
 if [ "$TICKER_FILTER" != "" ]; then 
     INPUT=$(echo "$INPUT" | awk -F ';' -v filters="$TICKER_FILTER" '$2 ~ (filters) {print $0}')
+fi
+
+if [ "$DATE_AFTER" != "" ]; then 
+    INPUT=$(echo "$INPUT" | awk -F ';' -v filter="$DATE_AFTER" '{if ($1 > filter) print $0}')
+fi
+
+if [ "$DATE_BEFORE" != "" ]; then 
+    INPUT=$(echo "$INPUT" | awk -F ';' -v filter="$DATE_BEFORE" '{if ($1 < filter) print $0}')
 fi
 
 #default action, when no command is called
@@ -133,7 +147,9 @@ elif [ "$COMMAND"  = "profit" ]; then
 #price = last price for a ticket
 #TODO align numbers on right
 elif [ "$COMMAND" = "pos" ]; then 
-    echo "$INPUT"  | sort -s -t\; -k2,2 -k1,1 | #sorts file based on second then first column
+    #sorts file based on second then first column
+    echo "$INPUT"  | sort -s -t\; -k2,2 -k1,1 |  
+    #puts input into format: "TICKER VALUE"
     awk -F ';' '{
         if (prev != $2){
             if (value != 0){ 
@@ -146,18 +162,18 @@ elif [ "$COMMAND" = "pos" ]; then
                 price=$4}
             } 
             END{printf("%s %.2f\n", prev, value*price)}' | 
-    
-    #sorting absolute value of prices
     sed -r 's/-([0-9]+.[0-9]+)/\1-/g;' | #place minus sign after the number -5 -> 5-
-    sort -k2nr |                
+    awk '{printf("%s %d\n", $0, length($2))}' | #print length of value at the end
+    sort -k3nr | #sort by length of value
     sed -r 's/([0-9]+.[0-9]+)-/-\1/g;' | #place minus sign infront of the number
-    sort -k2nr |
     awk '{
         if (NR == 1){
             max=length($2)
         } 
-        printf("%-9s : %*.2f\n", $1, max, $2)}' 
-    
+        printf("%-9s : %*.2f\n", $1, max, $2)}' |
+    #sort by actual values
+    sort -t: -k2nr 
+
 
 #last-price function 
 #prev = name of previous ticket
@@ -213,25 +229,51 @@ elif [ "$COMMAND" = "graph-pos" ]; then
     }' | 
     #sorting absolute value of prices
     sed -r 's/-([0-9]+.[0-9]+)/\1-/g;' | #place minus sign after the number -5 -> 5-
-    sort -k2nr |                         
+    sort -k2nr |
     sed -r 's/([0-9]+.[0-9]+)-/-\1/g;' | #place minus sign infront of the number
-    
-    #no width option
-    awk '{
-        printf("%-9s : ", $1)
-        count = int($2/1000)
-        if ($2 > 0){
-            while (count > 0){ 
-                count--
-                printf("#")
+    if [ "$WIDTH" = "" ]; then
+        #no width option
+        awk '{
+            printf("%-9s : ", $1)
+            count = int($2/1000)
+            if ($2 > 0){
+                while (count > 0){ 
+                    count--
+                    printf("#")
+                }
+            } else {
+                while (count < 0){
+                    count++
+                    printf("!")
+                }
+            } 
+            printf("\n")
+        }' | sort
+    else
+        #width option
+        awk -v width="$WIDTH" '{
+            printf("%-9s :", $1)
+            if (NR == 1){
+                if ($2 > 0)
+                    max = $2
+                else
+                    max = -$2
             }
-        } else {
-            while (count < 0){
-                count++
-                printf("!")
-            }
-        } 
-        printf("\n")
-    }' | sort 
+            count = int(($2*int(width))/max)
+            if (count != 0) printf(" ")
+            if ($2 > 0){
+                while (count > 0){ 
+                    count--
+                    printf("#")
+                }
+            } else {
+                while (count < 0){
+                    count++
+                    printf("!")
+                }
+            } 
+            printf("\n")
+        }' | sort
+    fi
 fi
 
