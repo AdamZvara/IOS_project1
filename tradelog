@@ -4,49 +4,139 @@ export POSIXLY_CORRECT=yes
 export LC_ALL=C
 export LC_NUMERIC=en_US.UTF-8
 
-#TODO check for arguments
-#if [ $# -eq 0 ]
-#    then echo "just print"
-#fi
+usage(){
+    echo "tradelog [-h|--help] [FILTR] [PRIKAZ] [LOG [LOG2 [...]]"
+    printf "\nPrikazy:\n"
+    printf "\tlist-tick - vypis tickerov
+    \tprofit - vypis celkoveho zisku uzavrenych pozic
+    \tpos - zoradeny vypis hodnot aktualne drzanych pozic
+    \tlast-price - posledna znama cena pre ticker
+    \thist-ord - histogram poctu transakcii podla tickeru
+    \tgraph-pos - graf hodnot drzenych pozic podla tickeru\n"
 
-#TODO generic file 
-file=$2
+    printf "\nFiltre:\n"
+    printf "\t-a DATETIME - after - zobrazenie zaznamov po urcitom datume
+    \t\tdatum je vo formate YYYY-MM-DD HH:MM:SS
+    \t-b DATETIME - before - zobrazenie zaznamov pred urcitym datumom
+    \t-t TICKER - zobrazenie zaznamov konkretneho tickeru
+    \t-w WIDTH - sirka grafu (cele kladne cislo)\n"
 
-#TODO generic function call
-# $1 is the first argument
-# $file is the name of file the open 
+    printf "\n-h/--help pre zobrazenie tejto spravy\n"
+}
 
+GZ_FILES=""
+LOG_FILES=""
+COMMAND=""
+
+DATE_AFTER=""
+DATE_BEFORE=""
+TICKER_FILTER=""
+WIDTH=""
+
+#parsing options
+#TODO --help
+while getopts ':a:b:t:w:h' o
+do
+    case "$o" in
+        a)
+            DATE_AFTER="$DATE_AFTER $OPTARG"
+            shift; shift;;
+        b)
+            DATE_BEFORE="$DATE_BEFORE $OPTARG"
+            shift; shift;;
+        t)
+            TICKER_FILTER="$TICKER_FILTER $OPTARG"
+            shift; shift;;
+        w)
+            if [ "$WIDTH" != "" ]; then
+                echo "Width sa nastavuje iba raz!"
+                exit 1
+            else
+                WIDTH="$OPTARG"
+                shift; shift
+            fi;;
+        h) usage; exit 0;;
+        *) echo "Neplatny prepinac"; exit 1;;
+    esac
+done
+
+#echo $DATE_AFTER
+#echo $DATE_BEFORE
+#echo $TICKER_FILTER
+#echo $WIDTH
+
+#TODO make sure that only one command is accepted
+#parsing command
+case "$1" in
+    list-tick) COMMAND="list-tick";shift;;
+    profit) COMMAND="profit";shift;;
+    pos) COMMAND="pos";shift;;
+    last-price) COMMAND="last-price";shift;;
+    hist-ord) COMMAND="hist-ord";shift;;
+    graph-pos) COMMAND="graph-pos";shift;;
+    *) COMMAND="none";;
+esac
+
+#echo "$COMMAND"
+
+while [ "$1" != "" ]; do
+    val=`expr match "$1" '.*\.gz$'`
+    if [ "$val" != 0 ]; then
+        GZ_FILES="$1 $GZ_FILES"
+    else
+        LOG_FILES="$1 $LOG_FILES"
+    fi
+    shift
+done
+
+#echo "$GZ_FILES"
+#echo "$LOG_FILES"
+
+if [ "$GZ_FILES" != "" ]; then
+    INPUT=$(gzip -d -c $GZ_FILES | cat $LOG_FILES -)
+elif [ "$LOG_FILES" != "" ]; then
+    INPUT=$(cat $LOG_FILES)
+else
+    INPUT=$(cat)
+fi
+
+#echo "$INPUT" | sort -s -t\; -k2,2 -k1,1
+
+
+#TODO rewrite functions so they take input
 #list-tick function - sorts out file by second column
-if [ "$1" = "list-tick" ]
-    then awk -F ';' '{print $2}' "$file"  | sort | uniq
+if [ "$COMMAND" = "list-tick" ]; then 
+    echo "$INPUT" | awk -F ';' '{print $2}' | sort | uniq
 
 #profit function - calculates whole profit based on sell/buy column (3rd) and
 #value (4th column) * volume (6th column)
-elif [ "$1" = "profit" ] 
-    then awk -F ';' '{
+elif [ "$COMMAND"  = "profit" ]; then 
+    echo "$INPUT" |
+    awk -F ';' '{
         tmp=$4*$6;
         if ($3 == "sell") value+=tmp
         else if ($3 == "buy") value-=tmp
         }
         END{printf("%.2f\n", value)
-        }' "$file"
+        }' 
 
 #pos function
 #prev = name of previous ticket
 #value = sum of buy/sell values
 #price = last price for a ticket
-elif [ "$1" = "pos" ]
-    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+#TODO align numbers on right
+elif [ "$COMMAND" = "pos" ]; then 
+    echo "$INPUT"  | sort -s -t\; -k2,2 -k1,1 | #sorts file based on second then first column
     awk -F ';' '{
         if (prev != $2){
             if (value != 0){ 
-                printf "%-9s : %11.2f\n", prev, value*price; 
+                printf "%-9s : %11.2f\n", prev, value*price 
             }
-                value=(($3 == "sell") ? value=-$6 : value=$6); 
-                prev = $2;
+                value=(($3 == "sell") ? value=-$6 : value=$6) 
+                prev = $2
             } else { 
-                ($3 == "sell") ? value-=$6 : value+=$6; 
-                price=$4};
+                ($3 == "sell") ? value-=$6 : value+=$6 
+                price=$4}
             } 
             END{printf("%-9s : %11.2f\n", prev, value*price)}' | 
     sort -t: -k2nr
@@ -54,31 +144,32 @@ elif [ "$1" = "pos" ]
 #last-price function 
 #prev = name of previous ticket
 #price = price of the last item
-elif [ "$1" = "last-price" ]
-    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+elif [ "$COMMAND" = "last-price" ]; then 
+    echo "$INPUT" | sort -s -t\; -k2,2 -k1,1 | #sorts file based on second then first column
     awk -F ';' '{
         if (NR == 1){
-            prev = $2;
+            prev = $2
         } 
         if (prev != $2){
-            printf("%-9s : %6.2f\n", prev, price; prev = $2);
+            printf("%-9s : %7.2f\n", prev, price)
+            prev = $2
         } else price=$4
         } 
-        END{printf "%-9s : %6.2f\n", prev, price}' 
+        END{printf "%-9s : %7.2f\n", prev, price}' 
 
 #hist-ord function
 #prev = name of previous ticket
-elif [ "$1" = "hist-ord" ]
-    then sort -s -t\; -k2,2 -k1,1 "$file" | 
+elif [ "$COMMAND" = "hist-ord" ]; then 
+    echo "$INPUT" | sort -s -t\; -k2,2 -k1,1 | 
     awk -F ';' '{
         if (NR == 1){
-            prev = $2; 
-            printf("%-9s : ", prev);
+            prev = $2 
+            printf("%-9s : ", prev)
         } else {
             if (prev != $2){
-                prev = $2; 
-                printf("#\n%-9s : ", prev);
-            } else printf("#");
+                prev = $2
+                printf("#\n%-9s : ", prev)
+            } else printf("#")
         } 
         }
         END{printf("#\n")}' 
@@ -86,12 +177,12 @@ elif [ "$1" = "hist-ord" ]
 #prev = name of previous ticket
 #value = sum of buy/sell values
 #price = last price for a ticket
-elif [ "$1" = "graph-pos" ]
-    then sort -s -t\; -k2,2 -k1,1 "$file" | #sorts file based on second then first column
+elif [ "$COMMAND" = "graph-pos" ]; then 
+    echo "$INPUT" | sort -s -t\; -k2,2 -k1,1  | #sorts file based on second then first column
     awk -F ';' '{
         if (prev != $2) {
             if (value != 0){ 
-                printf("%s %.2f\n", prev, value*price); 
+                printf("%s %.2f\n", prev, value*price)
             }
             value=(($3 == "sell") ? value=-$6 : value=$6); prev = $2
         }
@@ -109,11 +200,20 @@ elif [ "$1" = "graph-pos" ]
     
     #no width option
     awk '{
-        printf("%-9s : ", $1); 
+        printf("%-9s : ", $1)
+        count = int($2/100000)
         if ($2 > 0){
-            while ($2-- > 0) 
-                printf "#" 
+            while (count > 0){ 
+                count--
+                printf("#")
             }
-    }'
+        } else {
+            while (count < 0){
+                count++
+                printf("!")
+            }
+        } 
+        printf("\n")
+    }' | sort 
 fi
 

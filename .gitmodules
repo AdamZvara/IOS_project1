@@ -1,0 +1,3 @@
+[submodule "iotest"]
+	path = iotest
+	url = https://github.com/sktedro/IOS_proj1_tests.git
